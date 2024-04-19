@@ -8,16 +8,22 @@ import java.io.*;
 // Change BASE_PATH to wherever you want to store the Key_Value pairs on disk
 
 public class MemTable {
-    private static final int MAXIMUM_CAPACITY = (int) (1 * Math.pow(1024, 3)); // 1GB
+    private static int MAXIMUM_CAPACITY; // Default Size 1GB
 
     private SkipList skipList;
     private long currentSize;
     private LSMTree tree;
 
-    public MemTable() {
+    public MemTable(){
+        MAXIMUM_CAPACITY = (int) (1 * Math.pow(1024, 3));
         skipList = new SkipList();
         currentSize = 0;
         tree = new LSMTree();
+    }
+
+    public MemTable(int GB) {
+        this();
+        MAXIMUM_CAPACITY = (int) (GB * Math.pow(1024, 3));
     }
 
     public boolean insert(int key, int val){
@@ -26,6 +32,9 @@ public class MemTable {
         //if we reach maximum capacity, we flush the data to disk (LSM Tree)
         if(entrySize + currentSize >= MAXIMUM_CAPACITY)
             flush();
+
+        if (skipList.update(key, val))
+            return true;
 
         if (skipList.insert(key, val)){
             currentSize += entrySize;
@@ -36,20 +45,39 @@ public class MemTable {
     }
 
     public boolean delete(int key){
-        if(skipList.delete(key)) {
+        if (skipList.delete(key)) {
             currentSize -= (SkipListNode.KEY_SIZE + SkipListNode.VALUE_SIZE);
-            // tree.insert(key, tree.TOMBSTONE);
+            return true;
         }
 
         return false;
     }
 
     public boolean update(int key, int value){
-        return skipList.update(key, value);
+        if (!skipList.update(key, value)) {
+            // If the key does not exist, insert it as a new key-value pair
+            return insert(key, value);
+        }
+        return true;
     }
 
-    public boolean search(int key){
-        return skipList.search(key);
+    public Integer search(int key){
+        Integer value = skipList.search(key);
+
+        // Explicitly handle potential null values
+        if (value == null) {
+            // If value is TOMBSTONE or not found in SkipList, check in LSMTree
+            Integer treeValue = tree.search(key);
+            if (treeValue != null && treeValue != SkipList.TOMBSTONE) {
+                return treeValue; // Key found in LSM tree and not marked as deleted
+            }
+            return null; // Key not found or deleted
+        }
+
+        else if(value == SkipList.TOMBSTONE)
+            return null;
+
+        return value; // Return the found value from SkipList
     }
 
     private void flush() {
