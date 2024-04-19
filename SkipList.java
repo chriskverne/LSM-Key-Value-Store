@@ -16,6 +16,7 @@ import java.util.Random;
 public class SkipList {
     private static final int MAX_LEVEL = 16; // maximum level for this skip list
     private static final double P = 0.5; // probability factor
+    public static final int TOMBSTONE = Integer.MIN_VALUE; // marks a key-value pair deleted
     public SkipListNode header;
     private int level;
     private Random random;
@@ -52,6 +53,12 @@ public class SkipList {
         // move to where we potentially want to insert
         current = current.forward[0];
 
+        // if the key already exists, update the value
+        if (current != null && current.key == key) {
+            current.value = value; // Update the existing key with the new value (or TOMBSTONE)
+            return true;
+        }
+
         if (current == null || current.key != key) {
             int newLevel = randomLevel();
 
@@ -76,7 +83,7 @@ public class SkipList {
     }
 
     // searches by starting at the top level and moving downwards
-    public boolean search(int key) {
+    public Integer search(int key) {
         SkipListNode current = header;
         for (int i = level; i >= 0; i--) {
             while (current.forward[i] != null && current.forward[i].key < key) {
@@ -85,40 +92,17 @@ public class SkipList {
         }
 
         current = current.forward[0];
-        return (current != null) && (current.key == key);
+        if(current != null && current.key == key){
+            if (current.value == TOMBSTONE) // we found a deleted key-value pair
+                return TOMBSTONE;
+            return current.value; // valid key-value pair found
+        }
+
+        return null; // key not found in memory
     }
 
     public boolean delete(int key) {
-        SkipListNode[] update = new SkipListNode[MAX_LEVEL + 1];
-        SkipListNode current = header;
-
-        // Traverse from the highest level to the lowest level to find the node to be deleted
-        for (int i = level; i >= 0; i--) {
-            while (current.forward[i] != null && current.forward[i].key < key) {
-                current = current.forward[i];
-            }
-            update[i] = current;
-        }
-
-        // Move to the next node, which should be the node to delete
-        current = current.forward[0];
-
-        // Check if the node to be deleted is actually present and matches the key
-        if (current != null && current.key == key) {
-            // Update forward pointers for each level
-            for (int i = 0; i <= level; i++) {
-                // Only update pointers if the next node is the one to be deleted
-                if (update[i].forward[i] != current) continue;
-                update[i].forward[i] = current.forward[i];
-            }
-
-            // After removal, check if the highest level is now empty and adjust the list level
-            while (level > 0 && header.forward[level] == null) {
-                level--;
-            }
-            return true;
-        }
-        return false;
+        return insert(key, TOMBSTONE);
     }
 
     public boolean update(int key, int newValue) {
@@ -133,6 +117,8 @@ public class SkipList {
 
         // Check the next node at the base level
         current = current.forward[0];
+
+        // If we find the key, update value
         if (current != null && current.key == key) {
             current.value = newValue; // Update the value
             return true;
